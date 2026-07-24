@@ -72,7 +72,7 @@ export default function WorkLogPage() {
   const [siteName, setSiteName] = useState('');
   const [weather, setWeather] = useState('맑음');
 
-  // 작업내용
+  // 주요 작업내용
   const [workEntries, setWorkEntries] = useState([
     { processName: '', detail: '' }
   ]);
@@ -266,7 +266,10 @@ export default function WorkLogPage() {
   const startEditReport = (report: any) => {
     setEditingReport({
       ...report,
-      worker_entries: report.worker_entries || report.work_entries || [{ jobType: '', name: '', count: '1', price: '' }]
+      work_entries: report.work_entries || [{ processName: '', detail: '' }],
+      worker_entries: report.worker_entries || report.work_entries || [{ jobType: '', name: '', count: '1', price: '' }],
+      equipment_entries: report.equipment_entries || [{ name: '', count: '', price: '', note: '' }],
+      material_entries: report.material_entries || [{ name: '', spec: '', count: '', unit: '', price: '' }],
     });
     setActiveTab('edit');
   };
@@ -419,7 +422,7 @@ export default function WorkLogPage() {
               </div>
             </div>
 
-            {/* 작업내용 */}
+            {/* 주요 작업내용 */}
             <div>
               <div className="flex justify-between items-center mb-2">
                 <h3 className="font-bold text-slate-700">🏗️ 주요 작업내용</h3>
@@ -859,7 +862,7 @@ export default function WorkLogPage() {
 
                 {/* 👷 인원 노무 단가 입력 */}
                 <div>
-                  <h3 className="font-bold text-slate-700 mb-2">👷 출력 인원 및 단가 설정</h3>
+                  <h3 className="font-bold text-slate-700 mb-2">👷 출력 인원 및 노무 단가 설정</h3>
                   {(editingReport.worker_entries || []).map((entry: any, idx: number) => (
                     <div key={idx} className="flex flex-col sm:flex-row gap-2 mb-2 p-2 border rounded bg-white">
                       <input
@@ -897,7 +900,7 @@ export default function WorkLogPage() {
                       />
                       <input
                         type="number"
-                        placeholder="단가(원)"
+                        placeholder="노무 단가(원)"
                         value={entry.price || ''}
                         onChange={(e) => {
                           const updated = [...editingReport.worker_entries];
@@ -952,7 +955,7 @@ export default function WorkLogPage() {
                   ))}
                 </div>
 
-                {/* 📦 자재 단가 입력 추가 */}
+                {/* 📦 자재 단가 입력 */}
                 <div>
                   <h3 className="font-bold text-slate-700 mb-2">📦 자재 반입 및 단가 설정</h3>
                   {(editingReport.material_entries || []).map((entry: any, idx: number) => (
