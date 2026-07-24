@@ -62,7 +62,7 @@ const compressImage = (file: File): Promise<File> => {
 };
 
 export default function WorkLogPage() {
-  const [activeTab, setActiveTab] = useState<'form' | 'admin' | 'print' | 'summary'>('form');
+  const [activeTab, setActiveTab] = useState<'form' | 'admin' | 'print' | 'summary' | 'edit'>('form');
   const [adminPassword, setAdminPassword] = useState('');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
 
@@ -72,17 +72,22 @@ export default function WorkLogPage() {
   const [siteName, setSiteName] = useState('');
   const [weather, setWeather] = useState('맑음');
 
-  // 작업내용 & 인원 & 금액
+  // 작업내용
   const [workEntries, setWorkEntries] = useState([
-    { processName: '', detail: '', count: '', price: '' }
+    { processName: '', detail: '' }
   ]);
 
-  // 장비 사용 내역 & 금액
+  // 출력 인원 내역 (직종, 이름, 수량 - 단가는 관리자 전용)
+  const [workerEntries, setWorkerEntries] = useState([
+    { jobType: '', name: '', count: '1', price: '' }
+  ]);
+
+  // 장비 사용 내역
   const [equipmentEntries, setEquipmentEntries] = useState([
     { name: '', count: '', price: '', note: '' }
   ]);
 
-  // 자재 반입 내역 & 금액
+  // 자재 반입 내역
   const [materialEntries, setMaterialEntries] = useState([
     { name: '', spec: '', count: '', unit: '', price: '' }
   ]);
@@ -94,9 +99,17 @@ export default function WorkLogPage() {
   // 제출 상태
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 저장된 일보 목록
+  // 저장된 일보 목록 및 수정용 상태
   const [reports, setReports] = useState<any[]>([]);
   const [selectedReport, setSelectedReport] = useState<any>(null);
+  const [editingReport, setEditingReport] = useState<any>(null);
+
+  // 🛑 입력창에서 엔터키 입력 시 자동 제출 방지 함수
+  const preventEnterSubmit = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+    }
+  };
 
   // 비밀번호 확인 핸들러
   const handleAdminAuth = (e: React.FormEvent) => {
@@ -140,9 +153,12 @@ export default function WorkLogPage() {
     }
   };
 
-  // 항목 추가/삭제
-  const addWorkEntry = () => setWorkEntries([...workEntries, { processName: '', detail: '', count: '', price: '' }]);
+  // 항목 추가/삭제 (작성 폼용)
+  const addWorkEntry = () => setWorkEntries([...workEntries, { processName: '', detail: '' }]);
   const removeWorkEntry = (idx: number) => setWorkEntries(workEntries.filter((_, i) => i !== idx));
+
+  const addWorkerEntry = () => setWorkerEntries([...workerEntries, { jobType: '', name: '', count: '1', price: '' }]);
+  const removeWorkerEntry = (idx: number) => setWorkerEntries(workerEntries.filter((_, i) => i !== idx));
 
   const addEquipmentEntry = () => setEquipmentEntries([...equipmentEntries, { name: '', count: '', price: '', note: '' }]);
   const removeEquipmentEntry = (idx: number) => setEquipmentEntries(equipmentEntries.filter((_, i) => i !== idx));
@@ -157,32 +173,39 @@ export default function WorkLogPage() {
       return;
     }
 
-    let csvContent = '\uFEFF'; // 한글 깨짐 방지 UTF-8 BOM
-    csvContent += '일자,현장명,작성자,날씨,총투입인원(명),인원노무비(원),장비비(원),자재비(원),총합계금액(원)\n';
+    let csvContent = '\uFEFF';
+    csvContent += '일자,현장명,작성자,날씨,총투입인원(명),노무비(원),장비비(원),자재비(원),총합계금액(원)\n';
 
     reports.forEach((r) => {
-      const totalWorkers = (r.work_entries || []).reduce((acc: number, cur: any) => acc + (parseInt(cur.count) || 0), 0);
-      const laborCost = (r.work_entries || []).reduce((acc: number, cur: any) => acc + (parseInt(cur.price) || 0), 0);
+      const totalWorkers = (r.worker_entries || r.work_entries || []).reduce(
+        (acc: number, cur: any) => acc + (parseInt(cur.count) || 0),
+        0
+      );
+      const laborCost = (r.worker_entries || r.work_entries || []).reduce(
+        (acc: number, cur: any) => acc + (parseInt(cur.price) || 0) * (parseInt(cur.count) || 1),
+        0
+      );
       const eqCost = (r.equipment_entries || []).reduce((acc: number, cur: any) => acc + (parseInt(cur.price) || 0), 0);
-      const matCost = (r.material_entries || []).reduce((acc: number, cur: any) => acc + (parseInt(cur.price) || 0), 0);
+      const matCost = (r.material_entries || []).reduce(
+        (acc: number, cur: any) => acc + (parseInt(cur.price) || 0) * (parseInt(cur.count) || 1),
+        0
+      );
       const totalAmount = laborCost + eqCost + matCost;
 
       csvContent += `"${r.work_date}","${r.site_name}","${r.writer}","${r.weather}",${totalWorkers},${laborCost},${eqCost},${matCost},${totalAmount}\n`;
     });
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
+    const encodedUri = encodeURI('data:text/csv;charset=utf-8,' + csvContent);
     const link = document.createElement('a');
-    link.href = url;
+    link.setAttribute('href', encodedUri);
     link.setAttribute('download', `작업일보_전체집계_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // 제출 처리
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // 제출 처리 (수동 제출)
+  const handleManualSubmit = async () => {
     if (!siteName || !writer) {
       alert('현장명과 작성자는 필수 입력 항목입니다.');
       return;
@@ -191,12 +214,15 @@ export default function WorkLogPage() {
     setIsSubmitting(true);
 
     try {
-      // 1. 압축된 사진 업로드
       const uploadedPhotoUrls: string[] = [];
       for (const file of photoFiles) {
         const fileExt = 'jpg';
         const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
-        const { data, error } = await supabase.storage.from('work-photos').upload(fileName, file);
+        
+        const { data, error } = await supabase.storage.from('work-photos').upload(fileName, file, {
+          contentType: 'image/jpeg',
+          upsert: true
+        });
 
         if (!error && data) {
           const { data: publicData } = supabase.storage.from('work-photos').getPublicUrl(fileName);
@@ -204,7 +230,6 @@ export default function WorkLogPage() {
         }
       }
 
-      // 2. DB 저장
       const { error } = await supabase.from('work_logs').insert([
         {
           work_date: workDate,
@@ -212,6 +237,7 @@ export default function WorkLogPage() {
           site_name: siteName,
           weather,
           work_entries: workEntries,
+          worker_entries: workerEntries,
           equipment_entries: equipmentEntries,
           material_entries: materialEntries,
           photo_urls: uploadedPhotoUrls,
@@ -223,7 +249,8 @@ export default function WorkLogPage() {
       alert('작업일보가 성공적으로 제출되었습니다!');
       setWriter('');
       setSiteName('');
-      setWorkEntries([{ processName: '', detail: '', count: '', price: '' }]);
+      setWorkEntries([{ processName: '', detail: '' }]);
+      setWorkerEntries([{ jobType: '', name: '', count: '1', price: '' }]);
       setEquipmentEntries([{ name: '', count: '', price: '', note: '' }]);
       setMaterialEntries([{ name: '', spec: '', count: '', unit: '', price: '' }]);
       setPhotoFiles([]);
@@ -232,6 +259,64 @@ export default function WorkLogPage() {
       alert('제출 중 오류가 발생했습니다: ' + err.message);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // ✏️ 일보 수정 시작
+  const startEditReport = (report: any) => {
+    setEditingReport({
+      ...report,
+      worker_entries: report.worker_entries || report.work_entries || [{ jobType: '', name: '', count: '1', price: '' }]
+    });
+    setActiveTab('edit');
+  };
+
+  // ✏️ 일보 수정 저장 (관리자가 인원/장비/자재 단가 입력)
+  const handleUpdateReport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingReport) return;
+
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase
+        .from('work_logs')
+        .update({
+          work_date: editingReport.work_date,
+          writer: editingReport.writer,
+          site_name: editingReport.site_name,
+          weather: editingReport.weather,
+          work_entries: editingReport.work_entries,
+          worker_entries: editingReport.worker_entries,
+          equipment_entries: editingReport.equipment_entries,
+          material_entries: editingReport.material_entries,
+        })
+        .eq('id', editingReport.id);
+
+      if (error) throw error;
+
+      alert('작업일보 수정 및 단가 입력이 완료되었습니다!');
+      await fetchReports();
+      setActiveTab('admin');
+    } catch (err: any) {
+      alert('수정 중 오류가 발생했습니다: ' + err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // 🗑️ 일보 삭제
+  const handleDeleteReport = async (id: number) => {
+    if (!confirm('정말 이 작업일보를 삭제하시겠습니까?')) return;
+
+    try {
+      const { error } = await supabase.from('work_logs').delete().eq('id', id);
+      if (error) throw error;
+
+      alert('작업일보가 삭제되었습니다.');
+      await fetchReports();
+      if (selectedReport && selectedReport.id === id) setSelectedReport(null);
+    } catch (err: any) {
+      alert('삭제 중 오류가 발생했습니다: ' + err.message);
     }
   };
 
@@ -250,7 +335,7 @@ export default function WorkLogPage() {
         <button
           onClick={() => setActiveTab('admin')}
           className={`px-4 py-2 rounded-md font-bold text-sm sm:text-base ${
-            activeTab === 'admin' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'
+            activeTab === 'admin' || activeTab === 'edit' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'
           }`}
         >
           🔒 관리자 페이지
@@ -280,7 +365,7 @@ export default function WorkLogPage() {
             <h1 className="text-xl sm:text-2xl font-extrabold text-emerald-800">(주)태룡토건 작업일보</h1>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onKeyDown={preventEnterSubmit} onSubmit={(e) => e.preventDefault()} className="space-y-6">
             {/* 기본 정보 */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-lg">
               <div>
@@ -334,10 +419,10 @@ export default function WorkLogPage() {
               </div>
             </div>
 
-            {/* 작업내용 및 인원 & 노무비 */}
+            {/* 작업내용 */}
             <div>
               <div className="flex justify-between items-center mb-2">
-                <h3 className="font-bold text-slate-700">👷 작업내용 및 인원 (금액 집계)</h3>
+                <h3 className="font-bold text-slate-700">🏗️ 주요 작업내용</h3>
                 <button
                   type="button"
                   onClick={addWorkEntry}
@@ -357,7 +442,7 @@ export default function WorkLogPage() {
                       updated[idx].processName = e.target.value;
                       setWorkEntries(updated);
                     }}
-                    className="sm:w-1/4 border rounded p-1.5 text-sm"
+                    className="sm:w-1/3 border rounded p-1.5 text-sm"
                   />
                   <input
                     type="text"
@@ -368,33 +453,8 @@ export default function WorkLogPage() {
                       updated[idx].detail = e.target.value;
                       setWorkEntries(updated);
                     }}
-                    className="sm:w-1/3 border rounded p-1.5 text-sm"
+                    className="sm:w-2/3 border rounded p-1.5 text-sm"
                   />
-                  <div className="flex gap-1 items-center sm:w-1/4">
-                    <input
-                      type="number"
-                      placeholder="인원"
-                      value={entry.count}
-                      onChange={(e) => {
-                        const updated = [...workEntries];
-                        updated[idx].count = e.target.value;
-                        setWorkEntries(updated);
-                      }}
-                      className="w-16 border rounded p-1.5 text-sm"
-                    />
-                    <span className="text-xs text-slate-500">명</span>
-                    <input
-                      type="number"
-                      placeholder="노무비(원)"
-                      value={entry.price}
-                      onChange={(e) => {
-                        const updated = [...workEntries];
-                        updated[idx].price = e.target.value;
-                        setWorkEntries(updated);
-                      }}
-                      className="w-24 border rounded p-1.5 text-sm ml-1"
-                    />
-                  </div>
                   {workEntries.length > 1 && (
                     <button
                       type="button"
@@ -408,10 +468,73 @@ export default function WorkLogPage() {
               ))}
             </div>
 
-            {/* 장비 투입 내역 & 장비비 */}
+            {/* 👷 출력인원 작성 */}
             <div>
               <div className="flex justify-between items-center mb-2">
-                <h3 className="font-bold text-slate-700">🚜 장비 투입 내역 (장비비)</h3>
+                <h3 className="font-bold text-slate-700">👷 출력인원 명단 (직종/이름/수량)</h3>
+                <button
+                  type="button"
+                  onClick={addWorkerEntry}
+                  className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-bold"
+                >
+                  + 인원 추가
+                </button>
+              </div>
+              {workerEntries.map((entry, idx) => (
+                <div key={idx} className="flex flex-col sm:flex-row gap-2 mb-2 p-2 border rounded bg-white">
+                  <input
+                    type="text"
+                    placeholder="직종 (예: 보통인부, 특별인부)"
+                    value={entry.jobType}
+                    onChange={(e) => {
+                      const updated = [...workerEntries];
+                      updated[idx].jobType = e.target.value;
+                      setWorkerEntries(updated);
+                    }}
+                    className="sm:w-1/3 border rounded p-1.5 text-sm"
+                  />
+                  <input
+                    type="text"
+                    placeholder="작업자 성함 (이름)"
+                    value={entry.name}
+                    onChange={(e) => {
+                      const updated = [...workerEntries];
+                      updated[idx].name = e.target.value;
+                      setWorkerEntries(updated);
+                    }}
+                    className="sm:w-1/3 border rounded p-1.5 text-sm"
+                  />
+                  <div className="flex gap-1 items-center sm:w-1/3">
+                    <input
+                      type="number"
+                      placeholder="수량"
+                      value={entry.count}
+                      onChange={(e) => {
+                        const updated = [...workerEntries];
+                        updated[idx].count = e.target.value;
+                        setWorkerEntries(updated);
+                      }}
+                      className="w-20 border rounded p-1.5 text-sm"
+                    />
+                    <span className="text-xs text-slate-500">명</span>
+                    {workerEntries.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeWorkerEntry(idx)}
+                        className="text-red-500 font-bold px-2 text-sm ml-auto"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* 장비 투입 내역 */}
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="font-bold text-slate-700">🚜 장비 투입 내역</h3>
                 <button
                   type="button"
                   onClick={addEquipmentEntry}
@@ -431,7 +554,7 @@ export default function WorkLogPage() {
                       updated[idx].name = e.target.value;
                       setEquipmentEntries(updated);
                     }}
-                    className="sm:w-1/4 border rounded p-1.5 text-sm"
+                    className="sm:w-1/3 border rounded p-1.5 text-sm"
                   />
                   <input
                     type="number"
@@ -440,17 +563,6 @@ export default function WorkLogPage() {
                     onChange={(e) => {
                       const updated = [...equipmentEntries];
                       updated[idx].count = e.target.value;
-                      setEquipmentEntries(updated);
-                    }}
-                    className="sm:w-1/6 border rounded p-1.5 text-sm"
-                  />
-                  <input
-                    type="number"
-                    placeholder="장비비(원)"
-                    value={entry.price}
-                    onChange={(e) => {
-                      const updated = [...equipmentEntries];
-                      updated[idx].price = e.target.value;
                       setEquipmentEntries(updated);
                     }}
                     className="sm:w-1/4 border rounded p-1.5 text-sm"
@@ -464,7 +576,7 @@ export default function WorkLogPage() {
                       updated[idx].note = e.target.value;
                       setEquipmentEntries(updated);
                     }}
-                    className="sm:w-1/4 border rounded p-1.5 text-sm"
+                    className="sm:w-1/3 border rounded p-1.5 text-sm"
                   />
                   {equipmentEntries.length > 1 && (
                     <button
@@ -479,10 +591,10 @@ export default function WorkLogPage() {
               ))}
             </div>
 
-            {/* 자재 반입 내역 & 자재비 */}
+            {/* 자재 반입 내역 */}
             <div>
               <div className="flex justify-between items-center mb-2">
-                <h3 className="font-bold text-slate-700">📦 자재 반입 내역 (자재비)</h3>
+                <h3 className="font-bold text-slate-700">📦 자재 반입 내역</h3>
                 <button
                   type="button"
                   onClick={addMaterialEntry}
@@ -502,7 +614,7 @@ export default function WorkLogPage() {
                       updated[idx].name = e.target.value;
                       setMaterialEntries(updated);
                     }}
-                    className="sm:w-1/4 border rounded p-1.5 text-sm"
+                    className="sm:w-1/3 border rounded p-1.5 text-sm"
                   />
                   <input
                     type="text"
@@ -513,7 +625,7 @@ export default function WorkLogPage() {
                       updated[idx].spec = e.target.value;
                       setMaterialEntries(updated);
                     }}
-                    className="sm:w-1/6 border rounded p-1.5 text-sm"
+                    className="sm:w-1/3 border rounded p-1.5 text-sm"
                   />
                   <input
                     type="number"
@@ -522,17 +634,6 @@ export default function WorkLogPage() {
                     onChange={(e) => {
                       const updated = [...materialEntries];
                       updated[idx].count = e.target.value;
-                      setMaterialEntries(updated);
-                    }}
-                    className="sm:w-1/6 border rounded p-1.5 text-sm"
-                  />
-                  <input
-                    type="number"
-                    placeholder="자재비(원)"
-                    value={entry.price}
-                    onChange={(e) => {
-                      const updated = [...materialEntries];
-                      updated[idx].price = e.target.value;
                       setMaterialEntries(updated);
                     }}
                     className="sm:w-1/4 border rounded p-1.5 text-sm"
@@ -572,18 +673,19 @@ export default function WorkLogPage() {
 
             {/* 제출 버튼 */}
             <button
-              type="submit"
+              type="button"
+              onClick={handleManualSubmit}
               disabled={isSubmitting}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg shadow transition duration-200 text-base"
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg shadow transition duration-200 text-base cursor-pointer"
             >
-              {isSubmitting ? '사진 압축 및 제출 중...' : '작업일보 제출하기'}
+              {isSubmitting ? '사진 압축 및 제출 중...' : '작업일보 제출하기 (클릭)'}
             </button>
           </form>
         </div>
       )}
 
-      {/* 2. 관리자 인증 및 페이지들 */}
-      {(activeTab === 'admin' || activeTab === 'summary' || activeTab === 'print') && !isAdminAuthenticated && (
+      {/* 2. 관리자 인증 */}
+      {(activeTab === 'admin' || activeTab === 'summary' || activeTab === 'print' || activeTab === 'edit') && !isAdminAuthenticated && (
         <div className="max-w-md mx-auto bg-white rounded-xl shadow-md p-6 text-center mt-10">
           <h2 className="text-xl font-bold mb-4 text-slate-800">🔒 관리자 인증이 필요합니다</h2>
           <form onSubmit={handleAdminAuth} className="space-y-4">
@@ -604,11 +706,13 @@ export default function WorkLogPage() {
         </div>
       )}
 
+      {/* 관리자 영역 */}
       {isAdminAuthenticated && (
         <>
+          {/* 목록 관리 */}
           {activeTab === 'admin' && (
             <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-md p-6">
-              <h2 className="text-xl font-bold mb-4 border-b pb-2">📋 제출된 작업일보 목록</h2>
+              <h2 className="text-xl font-bold mb-4 border-b pb-2">📋 제출된 작업일보 목록 (단가입력 / 수정 / 삭제)</h2>
               <div className="space-y-3">
                 {reports.length === 0 ? (
                   <p className="text-slate-500 text-center py-4">저장된 작업일보가 없습니다.</p>
@@ -616,23 +720,299 @@ export default function WorkLogPage() {
                   reports.map((report) => (
                     <div
                       key={report.id}
-                      className="border rounded p-4 flex justify-between items-center bg-slate-50 hover:bg-emerald-50 cursor-pointer"
-                      onClick={() => {
-                        setSelectedReport(report);
-                        setActiveTab('print');
-                      }}
+                      className="border rounded p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center bg-slate-50 hover:bg-emerald-50 gap-2"
                     >
-                      <div>
-                        <div className="font-bold text-slate-800">{report.site_name}</div>
+                      <div
+                        className="cursor-pointer flex-1"
+                        onClick={() => {
+                          setSelectedReport(report);
+                          setActiveTab('print');
+                        }}
+                      >
+                        <div className="font-bold text-slate-800 text-base">{report.site_name}</div>
                         <div className="text-xs text-slate-500">
                           {report.work_date} | 작성자: {report.writer} | 날씨: {report.weather}
                         </div>
                       </div>
-                      <span className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded">A4 보기</span>
+
+                      <div className="flex gap-2 self-end sm:self-center">
+                        <button
+                          onClick={() => {
+                            setSelectedReport(report);
+                            setActiveTab('print');
+                          }}
+                          className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded font-bold"
+                        >
+                          🖨️ A4 보기
+                        </button>
+                        <button
+                          onClick={() => startEditReport(report)}
+                          className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded font-bold"
+                        >
+                          💰 단가 입력 / 수정
+                        </button>
+                        <button
+                          onClick={() => handleDeleteReport(report.id)}
+                          className="text-xs bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded font-bold"
+                        >
+                          🗑️ 삭제
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
               </div>
+            </div>
+          )}
+
+          {/* ✏️ 일보 수정 폼 (관리자 단가 입력) */}
+          {activeTab === 'edit' && editingReport && (
+            <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-md p-6">
+              <div className="flex justify-between items-center border-b pb-4 mb-4">
+                <h2 className="text-xl font-bold text-blue-800">💰 인원/장비/자재 단가 입력 및 수정</h2>
+                <button
+                  onClick={() => setActiveTab('admin')}
+                  className="text-xs bg-slate-300 text-slate-700 px-3 py-1.5 rounded font-bold"
+                >
+                  취소하고 돌아가기
+                </button>
+              </div>
+
+              <form onKeyDown={preventEnterSubmit} onSubmit={handleUpdateReport} className="space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-lg">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">작성일자</label>
+                    <input
+                      type="date"
+                      value={editingReport.work_date || ''}
+                      onChange={(e) => setEditingReport({ ...editingReport, work_date: e.target.value })}
+                      className="w-full border rounded p-2 text-sm"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">작성자</label>
+                    <input
+                      type="text"
+                      value={editingReport.writer || ''}
+                      onChange={(e) => setEditingReport({ ...editingReport, writer: e.target.value })}
+                      className="w-full border rounded p-2 text-sm"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">현장명</label>
+                    <input
+                      type="text"
+                      value={editingReport.site_name || ''}
+                      onChange={(e) => setEditingReport({ ...editingReport, site_name: e.target.value })}
+                      className="w-full border rounded p-2 text-sm"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">날씨</label>
+                    <select
+                      value={editingReport.weather || '맑음'}
+                      onChange={(e) => setEditingReport({ ...editingReport, weather: e.target.value })}
+                      className="w-full border rounded p-2 text-sm"
+                    >
+                      <option value="맑음">맑음</option>
+                      <option value="구름조금">구름조금</option>
+                      <option value="흐림">흐림</option>
+                      <option value="비">비</option>
+                      <option value="눈">눈</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* 주요 작업내용 수정 */}
+                <div>
+                  <h3 className="font-bold text-slate-700 mb-2">🏗️ 주요 작업내용</h3>
+                  {(editingReport.work_entries || []).map((entry: any, idx: number) => (
+                    <div key={idx} className="flex flex-col sm:flex-row gap-2 mb-2 p-2 border rounded bg-white">
+                      <input
+                        type="text"
+                        placeholder="공종/작업명"
+                        value={entry.processName || ''}
+                        onChange={(e) => {
+                          const updated = [...editingReport.work_entries];
+                          updated[idx].processName = e.target.value;
+                          setEditingReport({ ...editingReport, work_entries: updated });
+                        }}
+                        className="sm:w-1/3 border rounded p-1.5 text-sm"
+                      />
+                      <input
+                        type="text"
+                        placeholder="세부 작업내용"
+                        value={entry.detail || ''}
+                        onChange={(e) => {
+                          const updated = [...editingReport.work_entries];
+                          updated[idx].detail = e.target.value;
+                          setEditingReport({ ...editingReport, work_entries: updated });
+                        }}
+                        className="sm:w-2/3 border rounded p-1.5 text-sm"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                {/* 👷 인원 노무 단가 입력 */}
+                <div>
+                  <h3 className="font-bold text-slate-700 mb-2">👷 출력 인원 및 단가 설정</h3>
+                  {(editingReport.worker_entries || []).map((entry: any, idx: number) => (
+                    <div key={idx} className="flex flex-col sm:flex-row gap-2 mb-2 p-2 border rounded bg-white">
+                      <input
+                        type="text"
+                        placeholder="직종"
+                        value={entry.jobType || ''}
+                        onChange={(e) => {
+                          const updated = [...editingReport.worker_entries];
+                          updated[idx].jobType = e.target.value;
+                          setEditingReport({ ...editingReport, worker_entries: updated });
+                        }}
+                        className="sm:w-1/4 border rounded p-1.5 text-sm"
+                      />
+                      <input
+                        type="text"
+                        placeholder="성함"
+                        value={entry.name || ''}
+                        onChange={(e) => {
+                          const updated = [...editingReport.worker_entries];
+                          updated[idx].name = e.target.value;
+                          setEditingReport({ ...editingReport, worker_entries: updated });
+                        }}
+                        className="sm:w-1/4 border rounded p-1.5 text-sm"
+                      />
+                      <input
+                        type="number"
+                        placeholder="수량(명)"
+                        value={entry.count || '1'}
+                        onChange={(e) => {
+                          const updated = [...editingReport.worker_entries];
+                          updated[idx].count = e.target.value;
+                          setEditingReport({ ...editingReport, worker_entries: updated });
+                        }}
+                        className="w-20 border rounded p-1.5 text-sm"
+                      />
+                      <input
+                        type="number"
+                        placeholder="단가(원)"
+                        value={entry.price || ''}
+                        onChange={(e) => {
+                          const updated = [...editingReport.worker_entries];
+                          updated[idx].price = e.target.value;
+                          setEditingReport({ ...editingReport, worker_entries: updated });
+                        }}
+                        className="sm:w-1/4 border rounded p-1.5 text-sm bg-blue-50 font-bold"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                {/* 🚜 장비 단가 입력 */}
+                <div>
+                  <h3 className="font-bold text-slate-700 mb-2">🚜 장비 투입 및 단가 설정</h3>
+                  {(editingReport.equipment_entries || []).map((entry: any, idx: number) => (
+                    <div key={idx} className="flex flex-col sm:flex-row gap-2 mb-2 p-2 border rounded bg-white">
+                      <input
+                        type="text"
+                        placeholder="장비명"
+                        value={entry.name || ''}
+                        onChange={(e) => {
+                          const updated = [...editingReport.equipment_entries];
+                          updated[idx].name = e.target.value;
+                          setEditingReport({ ...editingReport, equipment_entries: updated });
+                        }}
+                        className="sm:w-1/3 border rounded p-1.5 text-sm"
+                      />
+                      <input
+                        type="number"
+                        placeholder="수량"
+                        value={entry.count || ''}
+                        onChange={(e) => {
+                          const updated = [...editingReport.equipment_entries];
+                          updated[idx].count = e.target.value;
+                          setEditingReport({ ...editingReport, equipment_entries: updated });
+                        }}
+                        className="sm:w-1/4 border rounded p-1.5 text-sm"
+                      />
+                      <input
+                        type="number"
+                        placeholder="장비 단가/금액(원)"
+                        value={entry.price || ''}
+                        onChange={(e) => {
+                          const updated = [...editingReport.equipment_entries];
+                          updated[idx].price = e.target.value;
+                          setEditingReport({ ...editingReport, equipment_entries: updated });
+                        }}
+                        className="sm:w-1/3 border rounded p-1.5 text-sm bg-blue-50 font-bold"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                {/* 📦 자재 단가 입력 추가 */}
+                <div>
+                  <h3 className="font-bold text-slate-700 mb-2">📦 자재 반입 및 단가 설정</h3>
+                  {(editingReport.material_entries || []).map((entry: any, idx: number) => (
+                    <div key={idx} className="flex flex-col sm:flex-row gap-2 mb-2 p-2 border rounded bg-white">
+                      <input
+                        type="text"
+                        placeholder="자재명"
+                        value={entry.name || ''}
+                        onChange={(e) => {
+                          const updated = [...editingReport.material_entries];
+                          updated[idx].name = e.target.value;
+                          setEditingReport({ ...editingReport, material_entries: updated });
+                        }}
+                        className="sm:w-1/4 border rounded p-1.5 text-sm"
+                      />
+                      <input
+                        type="text"
+                        placeholder="규격"
+                        value={entry.spec || ''}
+                        onChange={(e) => {
+                          const updated = [...editingReport.material_entries];
+                          updated[idx].spec = e.target.value;
+                          setEditingReport({ ...editingReport, material_entries: updated });
+                        }}
+                        className="sm:w-1/4 border rounded p-1.5 text-sm"
+                      />
+                      <input
+                        type="number"
+                        placeholder="수량"
+                        value={entry.count || ''}
+                        onChange={(e) => {
+                          const updated = [...editingReport.material_entries];
+                          updated[idx].count = e.target.value;
+                          setEditingReport({ ...editingReport, material_entries: updated });
+                        }}
+                        className="w-20 border rounded p-1.5 text-sm"
+                      />
+                      <input
+                        type="number"
+                        placeholder="자재 단가(원)"
+                        value={entry.price || ''}
+                        onChange={(e) => {
+                          const updated = [...editingReport.material_entries];
+                          updated[idx].price = e.target.value;
+                          setEditingReport({ ...editingReport, material_entries: updated });
+                        }}
+                        className="sm:w-1/4 border rounded p-1.5 text-sm bg-blue-50 font-bold"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow text-base"
+                >
+                  {isSubmitting ? '수정 사항 저장 중...' : '💾 단가 및 수정사항 저장하기'}
+                </button>
+              </form>
             </div>
           )}
 
@@ -665,12 +1045,13 @@ export default function WorkLogPage() {
                   </thead>
                   <tbody>
                     {reports.map((report, idx) => {
-                      const totalWorkers = (report.work_entries || []).reduce(
+                      const workersList = report.worker_entries || report.work_entries || [];
+                      const totalWorkers = workersList.reduce(
                         (acc: number, cur: any) => acc + (parseInt(cur.count) || 0),
                         0
                       );
-                      const laborCost = (report.work_entries || []).reduce(
-                        (acc: number, cur: any) => acc + (parseInt(cur.price) || 0),
+                      const laborCost = workersList.reduce(
+                        (acc: number, cur: any) => acc + (parseInt(cur.price) || 0) * (parseInt(cur.count) || 1),
                         0
                       );
                       const eqCost = (report.equipment_entries || []).reduce(
@@ -678,7 +1059,7 @@ export default function WorkLogPage() {
                         0
                       );
                       const matCost = (report.material_entries || []).reduce(
-                        (acc: number, cur: any) => acc + (parseInt(cur.price) || 0),
+                        (acc: number, cur: any) => acc + (parseInt(cur.price) || 0) * (parseInt(cur.count) || 1),
                         0
                       );
                       const grandTotal = laborCost + eqCost + matCost;
@@ -704,7 +1085,7 @@ export default function WorkLogPage() {
             </div>
           )}
 
-          {/* 출력용 A4 양식 (사진 정상 출력 반영) */}
+          {/* 🖨️ 출력용 A4 양식 */}
           {activeTab === 'print' && (
             <div className="max-w-4xl mx-auto bg-white p-8 rounded-xl shadow">
               <div className="flex justify-between items-center mb-4 no-print">
@@ -729,44 +1110,124 @@ export default function WorkLogPage() {
                     <div><strong>날 씨:</strong> {selectedReport.weather}</div>
                   </div>
 
-                  <h3 className="font-bold border-b mb-2">1. 작업내용 및 인원/노무비</h3>
+                  {/* 1. 주요 작업내용 */}
+                  <h3 className="font-bold border-b mb-1 text-sm">1. 주요 작업내용</h3>
                   <table className="w-full text-xs border-collapse border border-black mb-4">
                     <thead>
                       <tr className="bg-slate-100">
-                        <th className="border border-black p-1">공종</th>
-                        <th className="border border-black p-1">세부작업내용</th>
-                        <th className="border border-black p-1">인원(명)</th>
-                        <th className="border border-black p-1">노무비(원)</th>
+                        <th className="border border-black p-1 w-1/3">공종/작업명</th>
+                        <th className="border border-black p-1">세부 작업내용</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {(selectedReport.work_entries || []).map((w: any, i: number) => (
+                      {(selectedReport.work_entries || []).length > 0 ? (
+                        selectedReport.work_entries.map((w: any, i: number) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1 text-center">{w.processName || '-'}</td>
+                            <td className="border border-black p-1">{w.detail || '-'}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr><td colSpan={2} className="border border-black p-1 text-center">-</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+
+                  {/* 2. 출력인원 명단 */}
+                  <h3 className="font-bold border-b mb-1 text-sm">2. 출력인원 명단</h3>
+                  <table className="w-full text-xs border-collapse border border-black mb-4">
+                    <thead>
+                      <tr className="bg-slate-100">
+                        <th className="border border-black p-1">직종</th>
+                        <th className="border border-black p-1">성함(이름)</th>
+                        <th className="border border-black p-1">인원(명)</th>
+                        <th className="border border-black p-1">단가(원)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(selectedReport.worker_entries || selectedReport.work_entries || []).map((w: any, i: number) => (
                         <tr key={i}>
-                          <td className="border border-black p-1">{w.processName}</td>
-                          <td className="border border-black p-1">{w.detail}</td>
-                          <td className="border border-black p-1 text-center">{w.count}</td>
+                          <td className="border border-black p-1 text-center">{w.jobType || w.processName || '-'}</td>
+                          <td className="border border-black p-1 text-center">{w.name || w.detail || '-'}</td>
+                          <td className="border border-black p-1 text-center">{w.count || '1'}</td>
                           <td className="border border-black p-1 text-right">
-                            {w.price ? parseInt(w.price).toLocaleString() : 0}
+                            {w.price ? parseInt(w.price).toLocaleString() : '-'}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
 
-                  {/* 🖼️ 첨부된 사진 선명하게 보이기 */}
+                  {/* 3. 장비 투입 내역 */}
+                  <h3 className="font-bold border-b mb-1 text-sm">3. 장비 투입 내역</h3>
+                  <table className="w-full text-xs border-collapse border border-black mb-4">
+                    <thead>
+                      <tr className="bg-slate-100">
+                        <th className="border border-black p-1">장비명</th>
+                        <th className="border border-black p-1">수량/대수</th>
+                        <th className="border border-black p-1">비고</th>
+                        <th className="border border-black p-1">금액(원)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(selectedReport.equipment_entries || []).length > 0 ? (
+                        selectedReport.equipment_entries.map((eq: any, i: number) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1 text-center">{eq.name || '-'}</td>
+                            <td className="border border-black p-1 text-center">{eq.count || '-'}</td>
+                            <td className="border border-black p-1">{eq.note || '-'}</td>
+                            <td className="border border-black p-1 text-right">
+                              {eq.price ? parseInt(eq.price).toLocaleString() : '-'}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr><td colSpan={4} className="border border-black p-1 text-center">장비 투입 내역 없음</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+
+                  {/* 4. 자재 반입 내역 */}
+                  <h3 className="font-bold border-b mb-1 text-sm">4. 자재 반입 내역</h3>
+                  <table className="w-full text-xs border-collapse border border-black mb-4">
+                    <thead>
+                      <tr className="bg-slate-100">
+                        <th className="border border-black p-1">자재명</th>
+                        <th className="border border-black p-1">규격</th>
+                        <th className="border border-black p-1">수량</th>
+                        <th className="border border-black p-1">단가(원)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(selectedReport.material_entries || []).length > 0 ? (
+                        selectedReport.material_entries.map((m: any, i: number) => (
+                          <tr key={i}>
+                            <td className="border border-black p-1 text-center">{m.name || '-'}</td>
+                            <td className="border border-black p-1 text-center">{m.spec || '-'}</td>
+                            <td className="border border-black p-1 text-center">{m.count || '-'}</td>
+                            <td className="border border-black p-1 text-right">
+                              {m.price ? parseInt(m.price).toLocaleString() : '-'}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr><td colSpan={4} className="border border-black p-1 text-center">자재 반입 내역 없음</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+
+                  {/* 5. 현장 사진 */}
                   {selectedReport.photo_urls && selectedReport.photo_urls.length > 0 && (
                     <div>
-                      <h3 className="font-bold border-b mb-2">2. 현장 사진</h3>
+                      <h3 className="font-bold border-b mb-2 text-sm">5. 현장 사진</h3>
                       <div className="grid grid-cols-2 gap-2">
                         {selectedReport.photo_urls.map((url: string, i: number) => (
-                          <div key={i} className="border p-1 bg-slate-50">
+                          <div key={i} className="border p-1 bg-slate-50 flex justify-center items-center">
                             <img
                               src={url}
                               alt="현장사진"
-                              className="w-full h-48 object-cover rounded"
-                              onError={(e) => {
-                                (e.target as HTMLElement).style.display = 'none';
-                              }}
+                              className="w-full h-48 object-contain rounded"
+                              crossOrigin="anonymous"
                             />
                           </div>
                         ))}
