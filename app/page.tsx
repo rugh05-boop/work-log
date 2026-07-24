@@ -768,7 +768,7 @@ export default function WorkLogPage() {
             </div>
           )}
 
-          {/* ✏️ 일보 수정 폼 (관리자 단가 입력) */}
+          {/* ✏️ 일보 수정 폼 (관리자 단가 및 자재 단가 입력) */}
           {activeTab === 'edit' && editingReport && (
             <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-md p-6">
               <div className="flex justify-between items-center border-b pb-4 mb-4">
@@ -862,7 +862,21 @@ export default function WorkLogPage() {
 
                 {/* 👷 인원 노무 단가 입력 */}
                 <div>
-                  <h3 className="font-bold text-slate-700 mb-2">👷 출력 인원 및 노무 단가 설정</h3>
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="font-bold text-slate-700">👷 출력 인원 및 노무 단가 설정</h3>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingReport({
+                          ...editingReport,
+                          worker_entries: [...(editingReport.worker_entries || []), { jobType: '', name: '', count: '1', price: '' }],
+                        })
+                      }
+                      className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-bold"
+                    >
+                      + 인원 추가
+                    </button>
+                  </div>
                   {(editingReport.worker_entries || []).map((entry: any, idx: number) => (
                     <div key={idx} className="flex flex-col sm:flex-row gap-2 mb-2 p-2 border rounded bg-white">
                       <input
@@ -909,13 +923,37 @@ export default function WorkLogPage() {
                         }}
                         className="sm:w-1/4 border rounded p-1.5 text-sm bg-blue-50 font-bold"
                       />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = editingReport.worker_entries.filter((_: any, i: number) => i !== idx);
+                          setEditingReport({ ...editingReport, worker_entries: updated });
+                        }}
+                        className="text-red-500 font-bold px-2 text-sm self-end sm:self-center"
+                      >
+                        ✕
+                      </button>
                     </div>
                   ))}
                 </div>
 
                 {/* 🚜 장비 단가 입력 */}
                 <div>
-                  <h3 className="font-bold text-slate-700 mb-2">🚜 장비 투입 및 단가 설정</h3>
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="font-bold text-slate-700">🚜 장비 투입 및 단가 설정</h3>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingReport({
+                          ...editingReport,
+                          equipment_entries: [...(editingReport.equipment_entries || []), { name: '', count: '', price: '', note: '' }],
+                        })
+                      }
+                      className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-bold"
+                    >
+                      + 장비 추가
+                    </button>
+                  </div>
                   {(editingReport.equipment_entries || []).map((entry: any, idx: number) => (
                     <div key={idx} className="flex flex-col sm:flex-row gap-2 mb-2 p-2 border rounded bg-white">
                       <input
@@ -951,61 +989,99 @@ export default function WorkLogPage() {
                         }}
                         className="sm:w-1/3 border rounded p-1.5 text-sm bg-blue-50 font-bold"
                       />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = editingReport.equipment_entries.filter((_: any, i: number) => i !== idx);
+                          setEditingReport({ ...editingReport, equipment_entries: updated });
+                        }}
+                        className="text-red-500 font-bold px-2 text-sm self-end sm:self-center"
+                      >
+                        ✕
+                      </button>
                     </div>
                   ))}
                 </div>
 
-                {/* 📦 자재 단가 입력 */}
+                {/* 📦 자재 반입 및 단가 수정 (추가/삭제 및 입력란 완벽 활성화) */}
                 <div>
-                  <h3 className="font-bold text-slate-700 mb-2">📦 자재 반입 및 단가 설정</h3>
-                  {(editingReport.material_entries || []).map((entry: any, idx: number) => (
-                    <div key={idx} className="flex flex-col sm:flex-row gap-2 mb-2 p-2 border rounded bg-white">
-                      <input
-                        type="text"
-                        placeholder="자재명"
-                        value={entry.name || ''}
-                        onChange={(e) => {
-                          const updated = [...editingReport.material_entries];
-                          updated[idx].name = e.target.value;
-                          setEditingReport({ ...editingReport, material_entries: updated });
-                        }}
-                        className="sm:w-1/4 border rounded p-1.5 text-sm"
-                      />
-                      <input
-                        type="text"
-                        placeholder="규격"
-                        value={entry.spec || ''}
-                        onChange={(e) => {
-                          const updated = [...editingReport.material_entries];
-                          updated[idx].spec = e.target.value;
-                          setEditingReport({ ...editingReport, material_entries: updated });
-                        }}
-                        className="sm:w-1/4 border rounded p-1.5 text-sm"
-                      />
-                      <input
-                        type="number"
-                        placeholder="수량"
-                        value={entry.count || ''}
-                        onChange={(e) => {
-                          const updated = [...editingReport.material_entries];
-                          updated[idx].count = e.target.value;
-                          setEditingReport({ ...editingReport, material_entries: updated });
-                        }}
-                        className="w-20 border rounded p-1.5 text-sm"
-                      />
-                      <input
-                        type="number"
-                        placeholder="자재 단가(원)"
-                        value={entry.price || ''}
-                        onChange={(e) => {
-                          const updated = [...editingReport.material_entries];
-                          updated[idx].price = e.target.value;
-                          setEditingReport({ ...editingReport, material_entries: updated });
-                        }}
-                        className="sm:w-1/4 border rounded p-1.5 text-sm bg-blue-50 font-bold"
-                      />
-                    </div>
-                  ))}
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="font-bold text-slate-700">📦 자재 반입 및 단가 설정</h3>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingReport({
+                          ...editingReport,
+                          material_entries: [...(editingReport.material_entries || []), { name: '', spec: '', count: '', price: '' }],
+                        })
+                      }
+                      className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-bold"
+                    >
+                      + 자재 추가
+                    </button>
+                  </div>
+                  {(editingReport.material_entries || []).length === 0 ? (
+                    <p className="text-xs text-slate-400 p-2 border rounded bg-slate-50">반입된 자재 항목이 없습니다. 상단 [ + 자재 추가 ] 버튼으로 새로 등록할 수 있습니다.</p>
+                  ) : (
+                    editingReport.material_entries.map((entry: any, idx: number) => (
+                      <div key={idx} className="flex flex-col sm:flex-row gap-2 mb-2 p-2 border rounded bg-white">
+                        <input
+                          type="text"
+                          placeholder="자재명"
+                          value={entry.name || ''}
+                          onChange={(e) => {
+                            const updated = [...editingReport.material_entries];
+                            updated[idx].name = e.target.value;
+                            setEditingReport({ ...editingReport, material_entries: updated });
+                          }}
+                          className="sm:w-1/4 border rounded p-1.5 text-sm"
+                        />
+                        <input
+                          type="text"
+                          placeholder="규격"
+                          value={entry.spec || ''}
+                          onChange={(e) => {
+                            const updated = [...editingReport.material_entries];
+                            updated[idx].spec = e.target.value;
+                            setEditingReport({ ...editingReport, material_entries: updated });
+                          }}
+                          className="sm:w-1/4 border rounded p-1.5 text-sm"
+                        />
+                        <input
+                          type="number"
+                          placeholder="수량"
+                          value={entry.count || ''}
+                          onChange={(e) => {
+                            const updated = [...editingReport.material_entries];
+                            updated[idx].count = e.target.value;
+                            setEditingReport({ ...editingReport, material_entries: updated });
+                          }}
+                          className="w-20 border rounded p-1.5 text-sm"
+                        />
+                        <input
+                          type="number"
+                          placeholder="자재 단가(원)"
+                          value={entry.price || ''}
+                          onChange={(e) => {
+                            const updated = [...editingReport.material_entries];
+                            updated[idx].price = e.target.value;
+                            setEditingReport({ ...editingReport, material_entries: updated });
+                          }}
+                          className="sm:w-1/4 border rounded p-1.5 text-sm bg-blue-50 font-bold"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = editingReport.material_entries.filter((_: any, i: number) => i !== idx);
+                            setEditingReport({ ...editingReport, material_entries: updated });
+                          }}
+                          className="text-red-500 font-bold px-2 text-sm self-end sm:self-center"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))
+                  )}
                 </div>
 
                 <button
